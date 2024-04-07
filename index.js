@@ -81,3 +81,57 @@ function evaluate(expr, scope) {
     }
   }
 }
+// add "if" syntax
+specialForms.if = (args, scope) => {
+  if (args.length != 3) {
+    throw new SyntaxError('Wrong number of args to if');
+  } else if (evaluate(args[0], scope) !== false) {
+    return evaluate(args[1], scope);
+  } else {
+    return evaluate(args[2], scope);
+  }
+};
+// add "while" syntax
+specialForms.while = (args, scope) => {
+  if (args.length != 2) {
+    throw new SyntaxError('Wrong number of args to while');
+  }
+  while (evaluate(args[0], scope) !== false) {
+    evaluate(args[1], scope);
+  }
+  return false;
+};
+// add "do" syntax
+specialForms.do = (args, scope) => {
+  let value = false;
+  for (let arg of args) {
+    value = evaluate(arg, scope);
+  }
+  return value;
+};
+// create bindings
+specialForms.def = (args, scope) => {
+  if (args.length != 2 || args[0].type != 'word') {
+    throw new SyntaxError("Incorrect use of 'def'");
+  }
+  let value = evaluate(args[1], scope);
+  scope[args[0].name] = value;
+  return value;
+};
+// scopes
+const topScope = Object.create(null);
+topScope.true = true;
+topScope.false = false;
+// basic arithmetic and comparison operators
+for (let op of ['+', '-', '*', '/', '==', '<', '>']) {
+  topScope[op] = Function('a, b', `return a ${op} b;`);
+}
+// add "print" scope
+topScope.print = (value) => {
+  console.log(value);
+  return value;
+};
+// parse a program and run it in a fresh scope
+function run(program) {
+  return evaluate(parse(program), Object.create(topScope));
+}
