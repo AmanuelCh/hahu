@@ -306,3 +306,19 @@ specialForms.splice = (args, scope) => {
   }
   return array;
 };
+// add "getData" syntax
+specialForms.getData = (args, scope) => {
+  if (args.length !== 3) {
+    throw new SyntaxError('Wrong number of args to getData');
+  }
+  let url = evaluate(args[0], scope);
+  let method = evaluate(args[1], scope);
+  let body = evaluate(args[2], scope);
+
+  return fetch(url, {
+    method: method,
+    body: body,
+  })
+    .then((response) => response.json())
+    .then((data) => evaluate(data, scope));
+};
