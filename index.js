@@ -4,17 +4,37 @@ function parseExpression(program) {
   program = skipSpace(program);
   let match, expr;
   // construct different data structure depending on parsed program
-  if ((match = /^"([^"]*)"/.exec(program))) {
+  if ((match = /^\[/.exec(program))) {
+    expr = { type: 'array', elements: parseArray(program) };
+  } else if ((match = /^"([^"]*)"/.exec(program))) {
     expr = { type: 'value', value: match[1] };
   } else if ((match = /^\d+\b/.exec(program))) {
     expr = { type: 'value', value: Number(match[0]) };
-  } else if ((match = /^[^\s(),#"]+/.exec(program))) {
+  } else if ((match = /^[^\s(),#"\[\]]+/.exec(program))) {
     expr = { type: 'word', name: match[0] };
   } else {
-    // throw syntax error if the expression isn't valid
     throw new SyntaxError('Unexpected syntax:' + program);
   }
   return parseApply(expr, program.slice(match[0].length));
+}
+// parses arrays
+function parseArray(program) {
+  let elements = [];
+  // Skip the opening bracket
+  program = program.slice(1);
+  while (program[0] !== ']') {
+    let element = parseExpression(program);
+    elements.push(element.expr);
+    program = skipSpace(element.rest);
+
+    if (program[0] === ',') {
+      program = skipSpace(program.slice(1));
+    } else if (program[0] !== ']') {
+      throw new SyntaxError("Expected ',' or ']'");
+    }
+  }
+
+  return elements;
 }
 // function to cut whitespace off the start of the program string
 function skipSpace(string) {
@@ -25,6 +45,9 @@ function skipSpace(string) {
 // checks whether the expression is an application and it parses a parenthesized list of arguments
 function parseApply(expr, program) {
   program = skipSpace(program);
+  if (expr.type === 'array') {
+    return { expr: expr, rest: program };
+  }
   // return the expression it was given if there's no opening parenthesis
   if (program[0] != '(') {
     return { expr: expr, rest: program };
@@ -60,6 +83,8 @@ function evaluate(expr, scope) {
   // a value returns itself
   if (expr.type == 'value') {
     return expr.value;
+  } else if (expr.type === 'array') {
+    return expr.elements.map((element) => evaluate(element, scope));
   } else if (expr.type == 'word') {
     // check if the binding is in the scope and return value
     if (expr.name in scope) {
@@ -79,6 +104,69 @@ function evaluate(expr, scope) {
         throw new TypeError('Applying a non-function');
       }
     }
+  }
+  // array methods support
+  if (expr.type === 'array') {
+    return expr.elements.map((element) => evaluate(element, scope));
+  } else if (
+    expr.type === 'apply' &&
+    expr.operator.type === 'word' &&
+    expr.operator.name === 'length'
+  ) {
+    return evaluate(expr.args[0], scope).length;
+  } else if (
+    expr.type === 'apply' &&
+    expr.operator.type === 'word' &&
+    expr.operator.name === 'push'
+  ) {
+    let array = evaluate(expr.args[0], scope);
+    for (let i = 1; i < expr.args.length; i++) {
+      array.push(evaluate(expr.args[i], scope));
+    }
+    return array;
+  } else if (
+    expr.type === 'apply' &&
+    expr.operator.type === 'word' &&
+    expr.operator.name === 'pop'
+  ) {
+    return evaluate(expr.args[0], scope).pop();
+  } else if (
+    expr.type === 'apply' &&
+    expr.operator.type === 'word' &&
+    expr.operator.name === 'shift'
+  ) {
+    return evaluate(expr.args[0], scope).shift();
+  } else if (
+    expr.type === 'apply' &&
+    expr.operator.type === 'word' &&
+    expr.operator.name === 'unshift'
+  ) {
+    let array = evaluate(expr.args[0], scope);
+    for (let i = 1; i < expr.args.length; i++) {
+      array.unshift(evaluate(expr.args[i], scope));
+    }
+    return array;
+  } else if (
+    expr.type === 'apply' &&
+    expr.operator.type === 'word' &&
+    expr.operator.name === 'slice'
+  ) {
+    let array = evaluate(expr.args[0], scope);
+    let start = evaluate(expr.args[1], scope);
+    let end = evaluate(expr.args[2], scope);
+    return array.slice(start, end);
+  } else if (
+    expr.type === 'apply' &&
+    expr.operator.type === 'word' &&
+    expr.operator.name === 'splice'
+  ) {
+    let array = evaluate(expr.args[0], scope);
+    let start = evaluate(expr.args[1], scope);
+    let deleteCount = evaluate(expr.args[2], scope);
+    for (let i = 3; i < expr.args.length; i++) {
+      array.splice(start, deleteCount, evaluate(expr.args[i], scope));
+    }
+    return array;
   }
 }
 // add "if" syntax
@@ -157,4 +245,64 @@ specialForms.fun = (args, scope) => {
     }
     return evaluate(body, localScope);
   };
+};
+// array operations
+specialForms.length = (args, scope) => {
+  if (args.length !== 1) {
+    throw new SyntaxError('Wrong number of args to length');
+  }
+  return evaluate(args[0], scope).length;
+};
+specialForms.push = (args, scope) => {
+  if (args.length < 2) {
+    throw new SyntaxError('Wrong number of args to push');
+  }
+  let array = evaluate(args[0], scope);
+  for (let i = 1; i < args.length; i++) {
+    array.push(evaluate(args[i], scope));
+  }
+  return array;
+};
+specialForms.pop = (args, scope) => {
+  if (args.length !== 1) {
+    throw new SyntaxError('Wrong number of args to pop');
+  }
+  return evaluate(args[0], scope).pop();
+};
+specialForms.shift = (args, scope) => {
+  if (args.length !== 1) {
+    throw new SyntaxError('Wrong number of args to shift');
+  }
+  return evaluate(args[0], scope).shift();
+};
+specialForms.unshift = (args, scope) => {
+  if (args.length < 2) {
+    throw new SyntaxError('Wrong number of args to unshift');
+  }
+  let array = evaluate(args[0], scope);
+  for (let i = 1; i < args.length; i++) {
+    array.unshift(evaluate(args[i], scope));
+  }
+  return array;
+};
+specialForms.slice = (args, scope) => {
+  if (args.length !== 3) {
+    throw new SyntaxError('Wrong number of args to slice');
+  }
+  let array = evaluate(args[0], scope);
+  let start = evaluate(args[1], scope);
+  let end = evaluate(args[2], scope);
+  return array.slice(start, end);
+};
+specialForms.splice = (args, scope) => {
+  if (args.length < 4) {
+    throw new SyntaxError('Wrong number of args to splice');
+  }
+  let array = evaluate(args[0], scope);
+  let start = evaluate(args[1], scope);
+  let deleteCount = evaluate(args[2], scope);
+  for (let i = 3; i < args.length; i++) {
+    array.splice(start, deleteCount, evaluate(args[i], scope));
+  }
+  return array;
 };
